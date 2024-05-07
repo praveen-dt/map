@@ -52,6 +52,18 @@ class _MyAppState extends State<MyApp> {
       mapController.move(currentLocation, 15.0);
     });
   }
+  class _CompassOverlayState extends State<CompassOverlay> {
+  double? _heading = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    FlutterCompass.events!.listen((event) {
+      setState(() {
+        _heading = event.heading; // Get compass direction
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
