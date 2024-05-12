@@ -1,24 +1,59 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_compass/flutter_map_compass.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 
 void main() => runApp(MyApp());
 
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   @override
-  _MyAppState createState() => _MyAppState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Nepal Maps',
+      home: MyHomePage(),
+      localizationsDelegates: [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: [
+        const Locale('en', ''), // English
+        // Add other locales your app supports
+      ],
+    );
+  }
 }
 
-class _MyAppState extends State<MyApp> with TickerProviderStateMixin {
+class MyHomePage extends StatefulWidget {
+  @override
+  _MyHomePageState createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   final MapController mapController = MapController();
   LatLng? currentLocation; // Initially null, set once location is fetched.
+  String currentMapUrlTemplate =
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'; // Default to OpenStreetMap
+  AnimationController? _controller;
 
   @override
   void initState() {
     super.initState();
     _determinePosition();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
   }
 
   Future<void> _determinePosition() async {
@@ -27,7 +62,6 @@ class _MyAppState extends State<MyApp> with TickerProviderStateMixin {
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      // Handle disabled location services
       return Future.error('Location services are disabled.');
     }
 
@@ -35,13 +69,11 @@ class _MyAppState extends State<MyApp> with TickerProviderStateMixin {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        // Handle denied permission
         return Future.error('Location permissions are denied');
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      // Handle permanently denied permission
       return Future.error(
           'Location permissions are permanently denied, we cannot request permissions.');
     }
@@ -53,94 +85,123 @@ class _MyAppState extends State<MyApp> with TickerProviderStateMixin {
   }
 
   void _animateToUser() {
-    if (currentLocation == null) return; // Ensure location is not null
+    if (currentLocation == null || _controller == null) return;
 
-    final latTween = Tween<double>(
-      begin: mapController.center.latitude,
-      end: currentLocation!.latitude,
-    );
-    final lngTween = Tween<double>(
-      begin: mapController.center.longitude,
-      end: currentLocation!.longitude,
-    );
+    LatLng start = mapController.center;
+    LatLng destination = currentLocation!;
+    double startZoom = mapController.zoom;
+    double destinationZoom = 13.0; // Set this to your preferred zoom level
 
-    var controller = AnimationController(
-      duration: Duration(milliseconds: 500),
-      vsync: this,
-    );
+    Tween<double> latTween =
+        Tween<double>(begin: start.latitude, end: destination.latitude);
+    Tween<double> lngTween =
+        Tween<double>(begin: start.longitude, end: destination.longitude);
+    Tween<double> zoomTween =
+        Tween<double>(begin: startZoom, end: destinationZoom);
 
-    Animation<double> animation = CurvedAnimation(
-      parent: controller,
-      curve: Curves.fastOutSlowIn,
-    );
+    _controller!.reset();
+    _controller!.forward();
 
-    controller.addListener(() {
-      LatLng newPos = LatLng(
-        latTween.evaluate(animation),
-        lngTween.evaluate(animation),
-      );
-      mapController.move(newPos, mapController.zoom);
+    _controller!.addListener(() {
+      double lat = latTween.evaluate(_controller!);
+      double lng = lngTween.evaluate(_controller!);
+      double zoom = zoomTween.evaluate(_controller!);
+      mapController.move(LatLng(lat, lng), zoom);
     });
+  }
 
-    animation.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        controller.dispose();
-      }
-    });
-
-    controller.forward();
+  void _showLayerOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return Wrap(
+          children: <Widget>[
+            ListTile(
+              leading: Icon(Icons.map),
+              title: Text('StreetView'),
+              onTap: () {
+                setState(() {
+                  currentMapUrlTemplate =
+                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+                });
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.terrain),
+              title: Text('TopoView'),
+              onTap: () {
+                setState(() {
+                  currentMapUrlTemplate =
+                      'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+                });
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     if (currentLocation == null) {
-      return MaterialApp(
-        home: Scaffold(
-          body: Center(
-              child:
-                  CircularProgressIndicator()), // Show loading indicator while fetching location
-        ),
+      return Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(title: const Text('Nepal Maps')),
-        body: FlutterMap(
-          mapController: mapController,
-          options: MapOptions(
-            center: currentLocation,
-            zoom: 13.0,
-            minZoom: 10,
-            maxZoom: 18,
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-              subdomains: const ['a', 'b', 'c'],
-            ),
-            MarkerLayer(
-              markers: [
-                Marker(
-                  point: currentLocation!,
-                  width: 80.0,
-                  height: 80.0,
-                  child: Container(
-                    child: const Icon(Icons.location_on,
-                        color: Colors.red, size: 40),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: _animateToUser,
-          child: Icon(Icons.my_location),
-          backgroundColor: Colors.blue,
-        ),
-        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Nepal Maps'),
       ),
+      body: FlutterMap(
+        mapController: mapController,
+        options: MapOptions(
+          center: currentLocation,
+          zoom: 13.0,
+          minZoom: 10,
+          maxZoom: 18,
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: currentMapUrlTemplate,
+            subdomains: ['a', 'b', 'c'],
+          ),
+          const MapCompass.cupertino(hideIfRotatedNorth: true),
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: currentLocation!,
+                width: 80.0,
+                height: 80.0,
+                child: Container(
+                  child: const Icon(FontAwesomeIcons.locationDot,
+                      color: Color.fromARGB(255, 4, 156, 226), size: 30),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: <Widget>[
+          FloatingActionButton(
+            onPressed: _showLayerOptions,
+            child: Icon(Icons.layers),
+            backgroundColor: Colors.green,
+          ),
+          SizedBox(height: 10),
+          FloatingActionButton(
+            onPressed: _animateToUser,
+            child: Icon(Icons.my_location),
+            backgroundColor: Colors.blue,
+          ),
+        ],
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }
