@@ -39,6 +39,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   String currentMapUrlTemplate =
       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'; // Default to OpenStreetMap
   AnimationController? _controller;
+  StreamSubscription<Position>? _positionStreamSubscription;
 
   @override
   void initState() {
@@ -48,11 +49,13 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 500),
       vsync: this,
     );
+    _listenToPosition();
   }
 
   @override
   void dispose() {
     _controller?.dispose();
+    _positionStreamSubscription?.cancel();
     super.dispose();
   }
 
@@ -110,6 +113,19 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     });
   }
 
+  void _listenToPosition() {
+    const locationSettings =
+        LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10);
+    _positionStreamSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+      (Position position) {
+        setState(() {
+          currentLocation = LatLng(position.latitude, position.longitude);
+        });
+      },
+    );
+  }
+
   void _showLayerOptions() {
     showModalBottomSheet(
       context: context,
@@ -119,6 +135,11 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
             ListTile(
               leading: Icon(Icons.map),
               title: Text('StreetView'),
+              trailing: currentMapUrlTemplate ==
+                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+                  ? Icon(Icons
+                      .check) // This line adds the checkmark if StreetView is the current layer
+                  : null,
               onTap: () {
                 setState(() {
                   currentMapUrlTemplate =
@@ -130,6 +151,11 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
             ListTile(
               leading: Icon(Icons.terrain),
               title: Text('TopoView'),
+              trailing: currentMapUrlTemplate ==
+                      'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
+                  ? Icon(Icons
+                      .check) // This line adds the checkmark if TopoView is the current layer
+                  : null,
               onTap: () {
                 setState(() {
                   currentMapUrlTemplate =
@@ -174,12 +200,24 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
             markers: [
               Marker(
                 point: currentLocation!,
-                width: 80.0,
-                height: 80.0,
+                width: 20.0,
+                height: 20.0,
                 child: Container(
-                  child: const Icon(FontAwesomeIcons.locationDot,
-                      color: Color.fromARGB(255, 4, 156, 226), size: 30),
-                ),
+                    //width: 0.2, // The diameter of the circle
+                    //height: 0.2, // The diameter of the circle
+                    decoration: BoxDecoration(
+                      color: Colors.yellow, // Color of the circle
+                      shape:
+                          BoxShape.circle, // Ensures the container is circular
+                    ),
+                    child: Center(
+                        child: Container(
+                            width: 15,
+                            height: 15,
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.circle,
+                            )))),
               ),
             ],
           ),
