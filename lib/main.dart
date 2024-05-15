@@ -101,10 +101,13 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         height: 15.0,
         point: LatLng(
             alert['point']['coordinates'][1], alert['point']['coordinates'][0]),
-        child: Container(
-          decoration: BoxDecoration(
-            color: markerColor,
-            shape: BoxShape.circle,
+        child: GestureDetector(
+          onTap: () => _showAlertInfo(context, alert),
+          child: Container(
+            decoration: BoxDecoration(
+              color: markerColor,
+              shape: BoxShape.circle,
+            ),
           ),
         ),
       );
@@ -182,6 +185,36 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         setState(() {
           currentLocation = LatLng(position.latitude, position.longitude);
         });
+      },
+    );
+  }
+
+  void _showAlertInfo(BuildContext context, Map<String, dynamic> alert) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("${alert['title']}"),
+          content: SingleChildScrollView(
+            child: Column(
+              children: [
+                Text(" ${alert['description']}"),
+                //Text("Location: ${alert['location']}"),
+                //Text("Land Cover: ${alert['land_cover']}"),
+                //Text("Brightness: ${alert['brightness']}"),
+                //Text("Confidence: ${alert['confidence']}"),
+                Text("Source: ${alert['source']}"),
+                // Additional alert details can be added here
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: Text("Close"),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
+        );
       },
     );
   }
