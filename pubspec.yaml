@@ -38,9 +38,12 @@ dependencies:
  
 
   sensors_plus: ^1.2.0
-  http: ^1.2.1
+  http: ^1.0.0
   font_awesome_flutter: ^10.7.0
   flutter_map_compass: ^1.0.0
+  
+
+
   flutter_localizations:
     sdk: flutter
   

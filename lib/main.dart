@@ -6,6 +6,8 @@ import 'package:flutter_map_compass/flutter_map_compass.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 void main() => runApp(MyApp());
 
@@ -37,13 +39,17 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   final MapController mapController = MapController();
   LatLng? currentLocation; // Initially null, set once location is fetched.
   String currentMapUrlTemplate =
-      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'; // Default to OpenStreetMap
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png'; // Default to OpenStreetMap
   AnimationController? _controller;
   StreamSubscription<Position>? _positionStreamSubscription;
+  List<Map<String, dynamic>> _alerts = [];
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
+    fetchAlerts();
+    _timer = Timer.periodic(Duration(minutes: 2), (Timer t) => fetchAlerts());
     _determinePosition();
     _controller = AnimationController(
       duration: const Duration(milliseconds: 500),
@@ -52,10 +58,64 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     _listenToPosition();
   }
 
+  Future<void> fetchAlerts() async {
+    const url =
+        'https://bipadportal.gov.np/api/v1/alert/?rainBasin=&rainStation=&riverBasin=&riverStation=&hazard=&started_on__gt=2024-05-08T00%3A00%3A00%2B05%3A45&started_on__lt=2024-05-15T23%3A59%3A59%2B05%3A45&expand=event&ordering=-started_on';
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        var data = jsonDecode(response.body);
+        setState(() {
+          _alerts = List<Map<String, dynamic>>.from(data['results']);
+        });
+      } else {
+        throw Exception('Failed to load alerts');
+      }
+    } catch (e) {
+      print('Error fetching alerts: $e');
+    }
+  }
+
+  List<Marker> _generateMarkers() {
+    return _alerts.map((alert) {
+      Color markerColor;
+      switch (alert['referenceType']) {
+        case 'fire':
+          markerColor = Colors.red;
+          break;
+        case 'rain':
+          markerColor = Colors.blue;
+          break;
+        case 'flood':
+          markerColor = Colors.black;
+          break;
+        case 'pollution':
+          markerColor = Colors.yellow;
+          break;
+        default:
+          markerColor = Colors.grey; // Default color for undefined types
+      }
+
+      return Marker(
+        width: 15.0,
+        height: 15.0,
+        point: LatLng(
+            alert['point']['coordinates'][1], alert['point']['coordinates'][0]),
+        child: Container(
+          decoration: BoxDecoration(
+            color: markerColor,
+            shape: BoxShape.circle,
+          ),
+        ),
+      );
+    }).toList();
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
     _positionStreamSubscription?.cancel();
+    _timer?.cancel();
     super.dispose();
   }
 
@@ -126,6 +186,57 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     );
   }
 
+  void _showAlertMessage(BuildContext context) {
+    if (_alerts.isEmpty) {
+      // Show a loading indicator or a message indicating data is being fetched
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text("Fetching Alerts..."),
+            content: CircularProgressIndicator(),
+            actions: [
+              TextButton(
+                child: Text("Cancel"),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          );
+        },
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          String titleText = "${_alerts.length} Alerts";
+          return AlertDialog(
+            title: Text(titleText),
+            content: SingleChildScrollView(
+              child: Column(
+                children: _alerts.map((alert) {
+                  return Column(
+                    children: [
+                      Text("${alert['title']} - ${alert['description']}"),
+                      Divider(),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                child: Text("Close"),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
+
   void _showLayerOptions() {
     showModalBottomSheet(
       context: context,
@@ -136,14 +247,14 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               leading: Icon(Icons.map),
               title: Text('StreetView'),
               trailing: currentMapUrlTemplate ==
-                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
                   ? Icon(Icons
                       .check) // This line adds the checkmark if StreetView is the current layer
                   : null,
               onTap: () {
                 setState(() {
                   currentMapUrlTemplate =
-                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
                 });
                 Navigator.pop(context);
               },
@@ -152,14 +263,14 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               leading: Icon(Icons.terrain),
               title: Text('TopoView'),
               trailing: currentMapUrlTemplate ==
-                      'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
+                      'https://tile.opentopomap.org/{z}/{x}/{y}.png'
                   ? Icon(Icons
                       .check) // This line adds the checkmark if TopoView is the current layer
                   : null,
               onTap: () {
                 setState(() {
                   currentMapUrlTemplate =
-                      'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+                      'https://tile.opentopomap.org/{z}/{x}/{y}.png';
                 });
                 Navigator.pop(context);
               },
@@ -180,22 +291,36 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nepal Maps'),
+        title: Stack(
+          alignment: Alignment.centerLeft,
+          children: <Widget>[
+            IconButton(
+              icon: Icon(Icons.notification_important,
+                  color: Colors.grey
+                      .withOpacity(0.9)), // Semi-transparent icon behind text
+              onPressed: () => _showAlertMessage(context),
+            ),
+            Center(child: Text('Nepal Maps')), // Centered text
+          ],
+        ),
       ),
       body: FlutterMap(
         mapController: mapController,
         options: MapOptions(
           center: currentLocation,
           zoom: 13.0,
-          minZoom: 10,
+          minZoom: 7,
           maxZoom: 18,
         ),
         children: [
           TileLayer(
             urlTemplate: currentMapUrlTemplate,
-            subdomains: ['a', 'b', 'c'],
+            //subdomains: ['a', 'b', 'c'],
           ),
-          const MapCompass.cupertino(hideIfRotatedNorth: true),
+          MarkerLayer(
+            markers: _generateMarkers(),
+          ),
+          MapCompass.cupertino(hideIfRotatedNorth: true),
           MarkerLayer(
             markers: [
               Marker(
